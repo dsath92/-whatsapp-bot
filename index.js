@@ -41,15 +41,31 @@ const flow = {
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info');
-  const sock = makeWASocket({ auth: state, printQRInTerminal: true });
-  sock.ev.on('creds.update', saveCreds);
-  sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
-    if (qr) { console.log('\n📱 Scan QR code with WhatsApp:\n'); qrcode.generate(qr, { small: true }); }
-    if (connection === 'close') {
-      const reconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      if (reconnect) startBot();
-    } else if (connection === 'open') { console.log('\n✅ Bot is ready!\n'); }
+
+  const sock = makeWASocket({
+    auth: state,
+    browser: ['Ubuntu', 'Chrome', '20.0.04'],
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 10000,
   });
+
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
+    if (qr) {
+      console.log('\n📱 Scan this QR code with your WhatsApp:\n');
+      qrcode.generate(qr, { small: true });
+    }
+    if (connection === 'close') {
+      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      console.log('Connection closed. Reconnecting:', shouldReconnect);
+      if (shouldReconnect) setTimeout(() => startBot(), 3000);
+    } else if (connection === 'open') {
+      console.log('\n✅ WhatsApp Bot is connected and ready!\n');
+    }
+  });
+
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
     if (!msg?.message || msg.key.fromMe) return;
@@ -69,7 +85,7 @@ async function startBot() {
       sessions[from] = { step: next };
       await sock.sendMessage(from, { text: flow[next].msg });
     } else if (cur && flow[cur]) {
-      await sock.sendMessage(from, { text: `❌ Invalid option. Please reply with a valid number.\n\n${flow[cur].msg}` });
+      await sock.sendMessage(from, { text: `❌ Invalid option.\n\n${flow[cur].msg}` });
     } else {
       sessions[from] = { step: 'start' };
       await sock.sendMessage(from, { text: flow.start.msg });
