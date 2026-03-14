@@ -1,5 +1,6 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
+const P = require('pino');
 
 const sessions = {};
 const greetings = ['hi', 'hello', 'namaste', 'hii', 'hey', 'namasthe', 'hy', 'start', 'menu', 'hai'];
@@ -39,15 +40,35 @@ const flow = {
   talk: { msg: `🙏 Sri Shyam Sharma will contact you shortly!\n\n📞 (407) 398-3567\n🌐 https://www.ushindurituals.com\n📸 https://www.instagram.com/shyam_hindupriest/\n▶️ https://www.youtube.com/@Sri_Shyam_Sharma_Hindupriest\n\nReply 0 for Main Menu`, opts: {'0':'start'} }
 };
 
+let sock;
+
+async function sendMsg(jid, text) {
+  try {
+    await delay(500);
+    await sock.sendMessage(jid, { text });
+    console.log('✅ Message sent to:', jid);
+  } catch (err) {
+    console.log('❌ Send error:', err.message);
+    try {
+      await delay(1000);
+      await sock.sendMessage(jid, { text });
+    } catch (e) {
+      console.log('❌ Retry failed:', e.message);
+    }
+  }
+}
+
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info');
 
-  const sock = makeWASocket({
+  sock = makeWASocket({
     auth: state,
-    browser: ['Ubuntu', 'Chrome', '20.0.04'],
+    logger: P({ level: 'silent' }),
+    browser: ['Chrome (Linux)', '', ''],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 10000,
+    retryRequestDelayMs: 2000,
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -60,35 +81,48 @@ async function startBot() {
     if (connection === 'close') {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       console.log('Connection closed. Reconnecting:', shouldReconnect);
-      if (shouldReconnect) setTimeout(() => startBot(), 3000);
+      if (shouldReconnect) setTimeout(() => startBot(), 5000);
     } else if (connection === 'open') {
       console.log('\n✅ WhatsApp Bot is connected and ready!\n');
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
     const msg = messages[0];
     if (!msg?.message || msg.key.fromMe) return;
     const from = msg.key.remoteJid;
-    if (from.includes('@g.us')) return;
-    const body = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim().toLowerCase();
+    if (!from || from.includes('@g.us')) return;
+
+    const body = (
+      msg.message?.conversation ||
+      msg.message?.extendedTextMessage?.text ||
+      msg.message?.imageMessage?.caption ||
+      ''
+    ).trim().toLowerCase();
+
     if (!body) return;
+
+    console.log('📩 Message from:', from, '| Body:', body);
+
     const session = sessions[from] || { step: null };
+
     if (greetings.includes(body) || !session.step) {
       sessions[from] = { step: 'start' };
-      await sock.sendMessage(from, { text: flow.start.msg });
+      await sendMsg(from, flow.start.msg);
       return;
     }
+
     const cur = session.step;
     if (cur && flow[cur]?.opts?.[body]) {
       const next = flow[cur].opts[body];
       sessions[from] = { step: next };
-      await sock.sendMessage(from, { text: flow[next].msg });
+      await sendMsg(from, flow[next].msg);
     } else if (cur && flow[cur]) {
-      await sock.sendMessage(from, { text: `❌ Invalid option.\n\n${flow[cur].msg}` });
+      await sendMsg(from, `❌ Invalid option. Please reply with a valid number.\n\n${flow[cur].msg}`);
     } else {
       sessions[from] = { step: 'start' };
-      await sock.sendMessage(from, { text: flow.start.msg });
+      await sendMsg(from, flow.start.msg);
     }
   });
 }
