@@ -5,6 +5,9 @@ const P = require('pino');
 const sessions = {};
 const greetings = ['hi', 'hello', 'namaste', 'hii', 'hey', 'namasthe', 'hy', 'start', 'menu', 'hai'];
 
+// మీ own number — ఈ number కి bot reply చేయదు
+const OWNER_NUMBER = '14073983567';
+
 const flow = {
   start: { msg: `🙏 Namaste! Welcome to Sri Shyam Sharma – Hindu Priest Services!\n\nHow can I help you today?\n\n1️⃣ Looking for Pooja\n2️⃣ Looking for Good Date for Pooja\n3️⃣ Pooja Items List\n4️⃣ Confirm Pooja Date\n5️⃣ Talk to Sri Shyam Sharma`, opts: {'1':'pooja','2':'gooddate','3':'items','4':'confirm','5':'talk'} },
   pooja: { msg: `🪔 Which pooja?\n\n1️⃣ Wedding\n2️⃣ Homam\n3️⃣ Gruhapravesham\n4️⃣ Satyanarayana Vratam\n5️⃣ Namakaranam/Aksharabhyasam\n6️⃣ Seemantham/Annaprasana\n7️⃣ Upanayanam\n8️⃣ Shradha Karma\n9️⃣ Other\n0️⃣ Main Menu`, opts: {'1':'wedding','2':'homam','3':'gruha','4':'satya','5':'nama','6':'seem','7':'upana','8':'shradha','9':'other','0':'start'} },
@@ -93,6 +96,13 @@ async function startBot() {
     if (!msg?.message || msg.key.fromMe) return;
     const from = msg.key.remoteJid;
     if (!from || from.includes('@g.us')) return;
+
+    // మీ own number నుండి వస్తే ignore చేయి
+    const fromNumber = from.replace('@s.whatsapp.net', '');
+    if (fromNumber === OWNER_NUMBER) {
+      console.log('⚠️ Ignoring message from owner:', from);
+      return;
+    }
 
     const body = (
       msg.message?.conversation ||
